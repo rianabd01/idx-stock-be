@@ -2,6 +2,7 @@
 .env.test
 .env.development
 .env.production
+graphify-out/
 
 .venv/
 __pycache__/
