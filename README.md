@@ -29,10 +29,13 @@ scripts/
   generate_network_graph.py   build graph dari table raw, insert ke DB, export JSON mock
   import_raw.py               import CSV IDX ke table raw
   inspect_db.py               util inspeksi koneksi/schema DB
-
-assets/
   xlsx_to_csv.py              converter XLSX IDX ke CSV
-  Sheet_1.csv                 CSV hasil export/import terakhir
+
+data/
+  raw/idx/
+    peng-06-00015-satu-persen.xlsx   sumber XLSX canonical, immutable
+  processed/
+    sheet_1.csv                       CSV bersih hasil converter
 ```
 
 ## Environment
@@ -190,8 +193,10 @@ Mencatat traffic source campaign dengan dedupe 10 menit.
 ### 1. Convert XLSX ke CSV
 
 ```bash
-uv run python assets/xlsx_to_csv.py assets/peng-06-00015-satu-persen.xlsx assets/Sheet_1.csv
+uv run python scripts/xlsx_to_csv.py data/raw/idx/peng-06-00015-satu-persen.xlsx data/processed/sheet_1.csv
 ```
+
+File di `data/raw/` adalah sumber canonical yang immutable dan tidak diedit. File di `data/processed/` adalah output generated yang dapat diregenerasi dari raw source.
 
 Converter otomatis mencari header row IDX:
 
@@ -266,6 +271,32 @@ Edge menyimpan metadata audit:
 }
 ```
 
+## News data
+
+Backend ini hanya membaca data news yang sudah matang dari PostgreSQL.
+
+Endpoint baca hasil:
+
+```text
+GET /news/latest?limit=20
+```
+
+Collection dan enrichment berita dilakukan oleh repo terpisah:
+
+```text
+/Users/rianabdillah/Project/Personal /idx-stock-workers
+```
+
+Worker repo tersebut bertanggung jawab membuat/mengisi table:
+
+```text
+news_sources
+news_articles
+news_fetch_logs
+```
+
+Backend API tidak menjalankan scraper dan tidak membawa dependency scraping seperti `feedparser` atau `httpx`.
+
 ## Deployment VPS
 
 Backend production dideploy di VPS:
@@ -287,8 +318,8 @@ rsync -az --delete \
   --exclude '.venv' \
   --exclude '__pycache__' \
   --exclude '.DS_Store' \
-  --exclude 'assets/*.xlsx' \
-  --exclude 'assets/*.csv' \
+  --exclude 'data/raw/' \
+  --exclude 'data/processed/' \
   -e 'ssh -i /Users/rianabdillah/Downloads/local.pem' \
   "idx-stcok-backend/" \
   ubuntu@101.32.249.2:/home/ubuntu/apps/idx-stock-backend/

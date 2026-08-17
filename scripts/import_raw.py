@@ -1,3 +1,4 @@
+import argparse
 import csv
 import os
 from datetime import date, timedelta
@@ -29,11 +30,19 @@ def excel_serial_to_date(value: str) -> date:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Import processed IDX CSV into the raw table.")
+    parser.add_argument(
+        "--input",
+        type=Path,
+        default=Path("data/processed/sheet_1.csv"),
+        help="Processed CSV input path",
+    )
+    args = parser.parse_args()
+
     load_dotenv(".env")
-    csv_path = Path("assets/Sheet_1.csv")
 
     rows = []
-    with csv_path.open(newline="", encoding="utf-8-sig") as f:
+    with args.input.open(newline="", encoding="utf-8-sig") as f:
         reader = csv.reader(f)
         next(reader)
         for row in reader:

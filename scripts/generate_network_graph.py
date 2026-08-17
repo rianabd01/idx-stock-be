@@ -1,3 +1,4 @@
+import argparse
 import json
 import math
 import os
@@ -11,7 +12,6 @@ import psycopg
 from dotenv import load_dotenv
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-FRONTEND_GRAPH_PATH = BACKEND_ROOT.parent / "src/mock/api/network-analysis-graph.json"
 
 FUZZY_AUTO_MATCH_THRESHOLD = 0.94
 FUZZY_REVIEW_THRESHOLD = 0.86
@@ -314,71 +314,15 @@ def build_graph(rows):
     }
 
 
-def create_graph_schema(cur):
-    cur.execute(
-        """
-        create table if not exists network_versions (
-            id bigserial primary key,
-            period_date date not null,
-            imported_at timestamptz not null default now(),
-            source text,
-            is_active boolean not null default true
-        )
-        """
-    )
-    cur.execute(
-        """
-        create table if not exists network_nodes (
-            id text not null,
-            version_id bigint not null references network_versions(id) on delete cascade,
-            type text not null check (type in ('company', 'investor')),
-            label text not null,
-            data jsonb not null default '{}',
-            degree integer not null default 0,
-            in_degree integer not null default 0,
-            out_degree integer not null default 0,
-            pagerank numeric not null default 0,
-            x numeric not null default 0,
-            y numeric not null default 0,
-            primary key (version_id, id)
-        )
-        """
-    )
-    cur.execute(
-        """
-        create table if not exists network_edges (
-            id text not null,
-            version_id bigint not null references network_versions(id) on delete cascade,
-            source text not null,
-            target text not null,
-            type text not null default 'owns',
-            label text,
-            percentage numeric not null,
-            total_shares bigint not null,
-            data jsonb not null default '{}',
-            primary key (version_id, id),
-            foreign key (version_id, source) references network_nodes(version_id, id) on delete cascade,
-            foreign key (version_id, target) references network_nodes(version_id, id) on delete cascade
-        )
-        """
-    )
-    cur.execute("create index if not exists network_nodes_version_type_idx on network_nodes (version_id, type)")
-    cur.execute("create index if not exists network_nodes_label_idx on network_nodes using gin (to_tsvector('simple', label))")
-    cur.execute("create index if not exists network_edges_version_source_idx on network_edges (version_id, source)")
-    cur.execute("create index if not exists network_edges_version_target_idx on network_edges (version_id, target)")
-    cur.execute("create index if not exists network_edges_version_percentage_idx on network_edges (version_id, percentage desc)")
-
-
-def save_graph_to_db(graph: dict) -> int:
+def save_graph_to_db(graph: dict, source: str) -> int:
     load_dotenv(BACKEND_ROOT / ".env")
     period_date = graph["versions"][0]["period_date"]
     with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
         with conn.cursor() as cur:
-            create_graph_schema(cur)
             cur.execute("delete from network_versions where period_date = %s", (period_date,))
             cur.execute(
                 "insert into network_versions (period_date, source) values (%s, %s) returning id",
-                (period_date, "peng-06-00015-satu-persen.xlsx"),
+                (period_date, source),
             )
             version_id = cur.fetchone()[0]
             cur.executemany(
@@ -429,14 +373,20 @@ def save_graph_to_db(graph: dict) -> int:
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--export-json", type=Path)
+    parser.add_argument("--source", default="peng-06-00015-satu-persen.xlsx", help="Source filename stored in network_versions")
+    args = parser.parse_args()
+
     rows = get_rows()
     graph = build_graph(rows)
-    version_id = save_graph_to_db(graph)
+    version_id = save_graph_to_db(graph, args.source)
     graph["versions"][0]["id"] = version_id
     graph["selected_version_id"] = version_id
     graph["graphs_by_version"] = {str(version_id): {"nodes": graph["nodes"], "edges": graph["edges"], "summary": graph["summary"]}}
-    FRONTEND_GRAPH_PATH.write_text(json.dumps(graph, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"wrote: {FRONTEND_GRAPH_PATH}")
+    if args.export_json:
+        args.export_json.write_text(json.dumps(graph, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"wrote: {args.export_json}")
     print(f"nodes: {graph['summary']['node_count']}")
     print(f"edges: {graph['summary']['edge_count']}")
     print(f"companies: {graph['summary']['company_count']}")
